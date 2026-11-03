@@ -24,5 +24,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
+if not exist "%MAXEXE%" (
+    echo Installation finished without creating "%MAXEXE%".
+    echo Check C:\Install\3dsMax-2025-install.log
+    pause
+    exit /b 1
+)
+
 echo Installation finished successfully.
+echo Program: "%MAXEXE%"
 pause
