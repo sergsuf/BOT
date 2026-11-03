@@ -14,6 +14,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $mountedByScript = $false
+$script:StatusDisplayTop = $null
+$script:StatusBlinkOn = $true
 
 function Write-Status {
     param(
@@ -26,18 +28,42 @@ function Write-Status {
         New-Item -ItemType Directory -Path $statusDirectory -Force | Out-Null
     }
     Set-Content -LiteralPath $StatusPath -Value "$Percent%|$Message" -Encoding UTF8
-    $width = [Math]::Max(10, [Math]::Min(40, [Console]::WindowWidth - 35))
+    try {
+        $width = [Math]::Max(10, [Math]::Min(40, [Console]::WindowWidth - 35))
+        if ($null -eq $script:StatusDisplayTop) {
+            $script:StatusDisplayTop = [Math]::Max(0, [Console]::CursorTop)
+        }
+    } catch {
+        $width = 30
+    }
     $filled = [int][Math]::Floor($width * $Percent / 100)
     $bar = ('#' * $filled) + ('-' * ($width - $filled))
     if ($Message -match '^(Installing Autodesk 3ds Max 2025\.\.\.)\s*\((\d+) files\)$') {
-        [Console]::Write(("`r{0}`n[{1}] {2,3}%  Files: {3}" -f $Matches[1], $bar, $Percent, $Matches[2]))
+        $title = 'Installing Autodesk 3ds Max 2025...'
+        $blink = if ($script:StatusBlinkOn) { '*' } else { ' ' }
+        $status = ("[{0}] {1,3}%  Status: Installing {2}  Files: {3}" -f $bar, $Percent, $blink, $Matches[2])
     }
     elseif ($Message -match '^Installing Autodesk 3ds Max 2025\.\.\.$') {
-        [Console]::Write(("`r{0}`n[{1}] {2,3}%  Installing..." -f $Message, $bar, $Percent))
+        $title = 'Installing Autodesk 3ds Max 2025...'
+        $blink = if ($script:StatusBlinkOn) { '*' } else { ' ' }
+        $status = ("[{0}] {1,3}%  Status: Installing {2}" -f $bar, $Percent, $blink)
     }
     else {
-        [Console]::Write(("`r[{0}] {1,3}%  {2}" -f $bar, $Percent, $Message))
+        $title = 'Installing Autodesk 3ds Max 2025...'
+        $status = ("[{0}] {1,3}%  Status: {2}" -f $bar, $Percent, $Message)
     }
+
+    try {
+        [Console]::SetCursorPosition(0, [Math]::Min($script:StatusDisplayTop, [Console]::WindowHeight - 2))
+        [Console]::Write($title.PadRight([Console]::WindowWidth - 1))
+        [Console]::SetCursorPosition(0, [Math]::Min($script:StatusDisplayTop + 1, [Console]::WindowHeight - 1))
+        [Console]::Write($status.PadRight([Console]::WindowWidth - 1))
+        $cursorTop = [Math]::Min($script:StatusDisplayTop + 1, [Console]::WindowHeight - 1)
+        [Console]::SetCursorPosition([Math]::Min($status.Length, [Console]::WindowWidth - 1), $cursorTop)
+    } catch {
+        [Console]::Write("`r$title`n$status")
+    }
+    $script:StatusBlinkOn = -not $script:StatusBlinkOn
 }
 
 function Write-Log {
