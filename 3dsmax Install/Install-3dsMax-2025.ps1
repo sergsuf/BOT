@@ -109,6 +109,12 @@ function Assert-Administrator {
     }
 }
 
+function Test-InstallerProcessRunning {
+    $installerProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -in @('Setup.exe', 'msiexec.exe') }
+    return $null -ne $installerProcesses
+}
+
 try {
     Assert-Administrator
 
@@ -189,13 +195,15 @@ try {
             $maxInstallerLastWriteTime = (Get-Item -LiteralPath $maxInstallerLog).LastWriteTimeUtc
             if ($null -eq $maxInstallerLogBaseline -or $maxInstallerLastWriteTime -gt $maxInstallerLogBaseline) {
                 $maxInstallerResult = Get-Content -LiteralPath $maxInstallerLog -Tail 500 -ErrorAction SilentlyContinue
-                if ($maxInstallerResult -match 'Installation success or error status: 1602') {
-                    throw "Autodesk 3ds Max installation was cancelled or rolled back (Windows Installer status 1602). Review $maxInstallerLog."
+                if ($maxInstallerResult -match 'Installation success or error status: (1602|1603)') {
+                    throw "Autodesk 3ds Max installation failed or was cancelled (Windows Installer status $($Matches[1])). Review $maxInstallerLog."
                 }
             }
         }
 
-        if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
+        if ($setupProcess.HasExited -and
+            -not (Test-InstallerProcessRunning) -and
+            (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
             if ($null -ne $folderSnapshotJob) {
                 Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
             }
@@ -243,7 +251,7 @@ try {
 
         if ($setupProcess.HasExited) {
             Start-Sleep -Seconds ([Math]::Max(1, $StatusRefreshSeconds))
-            if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
+            if (-not (Test-InstallerProcessRunning) -and (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
                 if ($null -ne $folderSnapshotJob) {
                     Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
                 }
