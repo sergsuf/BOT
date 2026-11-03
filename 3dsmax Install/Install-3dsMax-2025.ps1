@@ -176,8 +176,8 @@ try {
         'C:\Program Files (x86)\Common Files\Autodesk Shared',
         'C:\ProgramData\Autodesk'
     )
-    $snapshot = Get-FolderFileSnapshot -Paths $monitorRoots
-    $installedFileCount = $snapshot.FileCount
+    $installedFileCount = 0
+    $folderSnapshotJob = $null
 
     while ((Get-Date) -lt $deadline) {
         if (Test-Path -LiteralPath $maxInstallerLog -PathType Leaf) {
@@ -196,6 +196,9 @@ try {
             }
 
             if (((Get-Date) - $stableExecutableSince).TotalSeconds -ge 30) {
+                if ($null -ne $folderSnapshotJob) {
+                    Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
+                }
                 Write-Status 100 'Installation completed successfully.'
                 Write-Log 'Installation completed successfully.'
                 exit 0
@@ -206,10 +209,42 @@ try {
             $stableExecutableSince = $null
         }
 
-        $snapshot = Get-FolderFileSnapshot -Paths $monitorRoots
-        $installedFileCount = $snapshot.FileCount
-        $calculatedPercent = [Math]::Min(95, [int](95 * $installedFileCount / $EstimatedInstalledFiles))
-        Write-Status $calculatedPercent "Installing Autodesk 3ds Max 2025... ($installedFileCount files)"
+        if ($null -ne $folderSnapshotJob -and $folderSnapshotJob.State -eq 'Completed') {
+            $snapshot = Receive-Job -Job $folderSnapshotJob -ErrorAction SilentlyContinue
+            if ($null -ne $snapshot) {
+                $installedFileCount = [int]$snapshot.FileCount
+            }
+            Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
+            $folderSnapshotJob = $null
+        }
+        elseif ($null -ne $folderSnapshotJob -and $folderSnapshotJob.State -in @('Failed', 'Stopped')) {
+            Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
+            $folderSnapshotJob = $null
+        }
+
+        if ($null -eq $folderSnapshotJob -and -not (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
+            $folderSnapshotJob = Start-Job -ScriptBlock {
+                param([string[]]$Paths)
+
+                $count = 0
+                foreach ($path in $Paths) {
+                    if (-not (Test-Path -LiteralPath $path -PathType Container)) {
+                        continue
+                    }
+
+                    foreach ($file in Get-ChildItem -LiteralPath $path -File -Recurse -Force -ErrorAction SilentlyContinue) {
+                        $count++
+                    }
+                }
+
+                [PSCustomObject]@{ FileCount = $count }
+            } -ArgumentList (,$monitorRoots)
+        }
+
+        if (-not (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
+            $calculatedPercent = [Math]::Min(95, [int](95 * $installedFileCount / $EstimatedInstalledFiles))
+            Write-Status $calculatedPercent "Installing Autodesk 3ds Max 2025... ($installedFileCount files)"
+        }
 
         if ($setupProcess.HasExited) {
             Start-Sleep -Seconds ([Math]::Max(1, $StatusRefreshSeconds))
@@ -219,6 +254,9 @@ try {
                     Start-Sleep -Seconds 5
                 }
                 if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
+                    if ($null -ne $folderSnapshotJob) {
+                        Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
+                    }
                     Write-Status 100 'Installation completed successfully.'
                     Write-Log 'Installation completed successfully.'
                     exit 0
@@ -242,6 +280,9 @@ catch {
     exit 1
 }
 finally {
+    if ($null -ne (Get-Variable folderSnapshotJob -ValueOnly -ErrorAction SilentlyContinue)) {
+        Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
+    }
     if (-not $KeepIsoMounted -and $mountedByScript -and $IsoPath) {
         try {
             Dismount-DiskImage -ImagePath $IsoPath -ErrorAction SilentlyContinue | Out-Null
