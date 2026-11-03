@@ -7,6 +7,7 @@ param(
     [string]$StatusPath = 'C:\Install\3dsMax-2025-status.txt',
     [int]$EstimatedInstalledFiles = 8000,
     [int]$InstallerTimeoutSeconds = 300,
+    [int]$StatusRefreshSeconds = 2,
     [switch]$KeepIsoMounted
 )
 
@@ -25,8 +26,10 @@ function Write-Status {
         New-Item -ItemType Directory -Path $statusDirectory -Force | Out-Null
     }
     Set-Content -LiteralPath $StatusPath -Value "$Percent%|$Message" -Encoding UTF8
-    Write-Progress -Activity 'Installing Autodesk 3ds Max 2025' -Status $Message -PercentComplete $Percent
-    Write-Host ("`r[{0,-20}] {1,3}%  {2}" -f ('#' * [int]($Percent / 5)).PadRight(20, '-'), $Percent, $Message)
+    $width = [Math]::Max(10, [Math]::Min(40, [Console]::WindowWidth - 35))
+    $filled = [int][Math]::Floor($width * $Percent / 100)
+    $bar = ('#' * $filled) + ('-' * ($width - $filled))
+    [Console]::Write(("`r[{0}] {1,3}%  {2}" -f $bar, $Percent, $Message))
 }
 
 function Write-Log {
@@ -39,6 +42,25 @@ function Write-Log {
         New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
     }
     Add-Content -LiteralPath $LogPath -Value $line -Encoding UTF8
+}
+
+function Get-FolderFileSnapshot {
+    param([string[]]$Paths)
+
+    $count = 0
+    $bytes = 0L
+    foreach ($path in $Paths) {
+        if (-not (Test-Path -LiteralPath $path -PathType Container)) {
+            continue
+        }
+
+        foreach ($file in Get-ChildItem -LiteralPath $path -File -Recurse -Force -ErrorAction SilentlyContinue) {
+            $count++
+            $bytes += $file.Length
+        }
+    }
+
+    return [PSCustomObject]@{ FileCount = $count; Bytes = $bytes }
 }
 
 function Assert-Administrator {
@@ -114,6 +136,16 @@ try {
     $deadline = (Get-Date).AddSeconds($InstallerTimeoutSeconds)
     $installRoot = Split-Path -Path $maxExecutable -Parent
     $stableExecutableSince = $null
+    $monitorRoots = @(
+        $installRoot,
+        (Join-Path ([System.IO.Path]::GetTempPath()) 'odis_download_dest'),
+        'C:\Program Files\Autodesk\AdODIS',
+        'C:\Program Files\Common Files\Autodesk Shared',
+        'C:\Program Files (x86)\Common Files\Autodesk Shared',
+        'C:\ProgramData\Autodesk'
+    )
+    $snapshot = Get-FolderFileSnapshot -Paths $monitorRoots
+    $installedFileCount = $snapshot.FileCount
 
     while ((Get-Date) -lt $deadline) {
         if (Test-Path -LiteralPath $maxInstallerLog -PathType Leaf) {
@@ -142,16 +174,15 @@ try {
             $stableExecutableSince = $null
         }
 
-        $installedFileCount = 0
-        if (Test-Path -LiteralPath $installRoot -PathType Container) {
-            $installedFileCount = (Get-ChildItem -LiteralPath $installRoot -File -Recurse -ErrorAction SilentlyContinue | Measure-Object).Count
-        }
+        $snapshot = Get-FolderFileSnapshot -Paths $monitorRoots
+        $installedFileCount = $snapshot.FileCount
+        $sizeMb = [Math]::Round($snapshot.Bytes / 1MB, 0)
 
         $calculatedPercent = [Math]::Min(95, [Math]::Max(20, 20 + [int](75 * $installedFileCount / $EstimatedInstalledFiles)))
-        Write-Status $calculatedPercent "Installing Autodesk 3ds Max 2025... ($installedFileCount files)"
+        Write-Status $calculatedPercent "Installing Autodesk 3ds Max 2025... ($installedFileCount files, $sizeMb MB)"
 
         if ($setupProcess.HasExited) {
-            Start-Sleep -Seconds 10
+            Start-Sleep -Seconds ([Math]::Max(1, $StatusRefreshSeconds))
             if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
                 $verificationDeadline = (Get-Date).AddSeconds(30)
                 while ((Get-Date) -lt $verificationDeadline -and (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
