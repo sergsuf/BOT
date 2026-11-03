@@ -7,7 +7,7 @@ param(
     [string]$StatusPath = 'C:\Install\3dsMax-2025-status.txt',
     [int]$EstimatedInstalledFiles = 8000,
     [int]$InstallerTimeoutSeconds = 300,
-    [int]$StatusRefreshSeconds = 2,
+    [int]$StatusRefreshSeconds = 10,
     [switch]$KeepIsoMounted
 )
 
@@ -29,7 +29,15 @@ function Write-Status {
     $width = [Math]::Max(10, [Math]::Min(40, [Console]::WindowWidth - 35))
     $filled = [int][Math]::Floor($width * $Percent / 100)
     $bar = ('#' * $filled) + ('-' * ($width - $filled))
-    [Console]::Write(("`r[{0}] {1,3}%  {2}" -f $bar, $Percent, $Message))
+    if ($Message -match '^(Installing Autodesk 3ds Max 2025\.\.\.)\s*\((\d+) files\)$') {
+        [Console]::Write(("`r{0}`n[{1}] {2,3}%  Files: {3}" -f $Matches[1], $bar, $Percent, $Matches[2]))
+    }
+    elseif ($Message -match '^Installing Autodesk 3ds Max 2025\.\.\.$') {
+        [Console]::Write(("`r{0}`n[{1}] {2,3}%  Installing..." -f $Message, $bar, $Percent))
+    }
+    else {
+        [Console]::Write(("`r[{0}] {1,3}%  {2}" -f $bar, $Percent, $Message))
+    }
 }
 
 function Write-Log {
@@ -48,7 +56,6 @@ function Get-FolderFileSnapshot {
     param([string[]]$Paths)
 
     $count = 0
-    $bytes = 0L
     foreach ($path in $Paths) {
         if (-not (Test-Path -LiteralPath $path -PathType Container)) {
             continue
@@ -56,11 +63,10 @@ function Get-FolderFileSnapshot {
 
         foreach ($file in Get-ChildItem -LiteralPath $path -File -Recurse -Force -ErrorAction SilentlyContinue) {
             $count++
-            $bytes += $file.Length
         }
     }
 
-    return [PSCustomObject]@{ FileCount = $count; Bytes = $bytes }
+    return [PSCustomObject]@{ FileCount = $count }
 }
 
 function Assert-Administrator {
@@ -119,7 +125,7 @@ try {
 
     Write-Log "Mounted ISO at $mediaRoot"
     Write-Log "Launching $setup -q"
-    Write-Status 20 'Waiting for Autodesk Setup to start...'
+    Write-Status 0 'Waiting for Autodesk Setup to start...'
 
     $maxInstallerLog = Join-Path ([System.IO.Path]::GetTempPath()) '3dsMax_2025_install.log'
     $maxInstallerLogBaseline = if (Test-Path -LiteralPath $maxInstallerLog -PathType Leaf) {
@@ -176,10 +182,8 @@ try {
 
         $snapshot = Get-FolderFileSnapshot -Paths $monitorRoots
         $installedFileCount = $snapshot.FileCount
-        $sizeMb = [Math]::Round($snapshot.Bytes / 1MB, 0)
-
-        $calculatedPercent = [Math]::Min(95, [Math]::Max(20, 20 + [int](75 * $installedFileCount / $EstimatedInstalledFiles)))
-        Write-Status $calculatedPercent "Installing Autodesk 3ds Max 2025... ($installedFileCount files, $sizeMb MB)"
+        $calculatedPercent = [Math]::Min(95, [int](95 * $installedFileCount / $EstimatedInstalledFiles))
+        Write-Status $calculatedPercent "Installing Autodesk 3ds Max 2025... ($installedFileCount files)"
 
         if ($setupProcess.HasExited) {
             Start-Sleep -Seconds ([Math]::Max(1, $StatusRefreshSeconds))
