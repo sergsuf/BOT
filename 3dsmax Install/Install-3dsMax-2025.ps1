@@ -34,6 +34,12 @@ function Assert-Administrator {
 try {
     Assert-Administrator
 
+    $maxExecutable = 'C:\Program Files\Autodesk\3ds Max 2025\3dsmax.exe'
+    if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
+        Write-Log 'Autodesk 3ds Max 2025 is already installed successfully.'
+        exit 0
+    }
+
     if (-not (Test-Path -LiteralPath $IsoPath -PathType Leaf)) {
         throw "ISO file was not found: $IsoPath"
     }
@@ -71,16 +77,14 @@ try {
     }
 
     Write-Log "Mounted ISO at $mediaRoot"
-    Write-Log "Launching $setup --silent"
+    Write-Log "Launching $setup -q"
 
     $process = Start-Process -FilePath $setup `
-        -ArgumentList '--silent' `
+        -ArgumentList '-q' `
         -WorkingDirectory ([System.IO.Path]::GetDirectoryName($setup)) `
         -PassThru `
         -Wait
 
-    $installDirectory = 'C:\Program Files\Autodesk\3ds Max 2025'
-    $maxExecutable = Join-Path $installDirectory '3dsmax.exe'
     if (-not (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
         throw "Installer exited with code $($process.ExitCode), and 3dsmax.exe was not found. Review $LogPath."
     }
