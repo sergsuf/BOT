@@ -15,7 +15,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $mountedByScript = $false
 $script:StatusDisplayTop = $null
-$script:StatusDotPhase = 0
+$script:StatusSpinnerPhase = 0
 
 function Write-Status {
     param(
@@ -40,16 +40,16 @@ function Write-Status {
     $bar = ('#' * $filled) + ('-' * ($width - $filled))
     if ($Message -match '^(Installing Autodesk 3ds Max 2025\.\.\.)\s*\((\d+) files\)$') {
         $title = "Installing Autodesk 3ds Max 2025..."
-        $status = ("[{0}] {1,3}%  Files: {2}" -f $bar, $Percent, $Matches[2])
+        $spinner = @('/', '-', '\', '|')[$script:StatusSpinnerPhase]
+        $status = ("[{0}] {1,3}%  {2}  Files: {3}" -f $bar, $Percent, $spinner, $Matches[2])
     }
     elseif ($Message -match '^Installing Autodesk 3ds Max 2025\.\.\.$') {
         $title = "Installing Autodesk 3ds Max 2025..."
-        $status = "[{0}] {1,3}% " -f $bar, $Percent
+        $spinner = @('/', '-', '\', '|')[$script:StatusSpinnerPhase]
+        $status = ("[{0}] {1,3}%  {2}" -f $bar, $Percent, $spinner)
     }
     else {
-        $dotCount = ($script:StatusDotPhase % 3) + 1
-        $dots = '.' * $dotCount
-        $title = "Installing Autodesk 3ds Max 2025$dots"
+        $title = "Installing Autodesk 3ds Max 2025..."
         $status = ("[{0}] {1,3}%  Status: {2}" -f $bar, $Percent, $Message)
     }
 
@@ -64,7 +64,8 @@ function Write-Status {
         [Console]::Write("`r$title`n$status")
     }
     if ($Message -match '^Installing Autodesk 3ds Max 2025') {
-        $script:StatusDotPhase = ($script:StatusDotPhase + 1) % 3
+        $spinner = @('/', '-', '\', '|')
+        $script:StatusSpinnerPhase = ($script:StatusSpinnerPhase + 1) % $spinner.Count
     }
 }
 
@@ -246,7 +247,7 @@ try {
         }
 
         if ($setupProcess.HasExited) {
-            Start-Sleep -Seconds ([Math]::Max(1, $StatusRefreshSeconds))
+            Start-Sleep -Milliseconds 500
             if (-not (Test-InstallerProcessRunning) -and (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
                 if ($null -ne $folderSnapshotJob) {
                     Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
@@ -257,7 +258,7 @@ try {
             }
         }
 
-        Start-Sleep -Seconds ([Math]::Max(1, $StatusRefreshSeconds))
+        Start-Sleep -Milliseconds 500
     }
 
     if (-not (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {

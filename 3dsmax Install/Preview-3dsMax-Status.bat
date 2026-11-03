@@ -12,24 +12,20 @@ set "PERCENT=0"
 set "TITLE=Installing Autodesk 3ds Max 2025"
 set "FILE_COUNT=0"
 set "STATE=INSTALLING"
-set "DOT_PHASE=1"
+set "SPINNER_PHASE=1"
+for /f %%A in ('echo prompt $E ^| cmd') do set "ESC=%%A"
 
-:loop
-if "!DOT_PHASE!"=="1" set "DOTS=."
-if "!DOT_PHASE!"=="2" set "DOTS=.."
-if "!DOT_PHASE!"=="3" set "DOTS=..."
+:draw_screen
 cls
 echo.
 echo Autodesk 3ds Max 2025 - Status Preview
 echo ======================================
-if "!STATE!"=="INSTALLING" (
-    echo !TITLE!!DOTS!
-) else (
-    echo !TITLE!
-)
+echo !TITLE!
 echo.
 if "!STATE!"=="INSTALLING" (
     call :draw_progress !PERCENT!
+    echo.
+    echo %ESC%[8;1H%ESC%[2K!SPINNER!
     echo Files: !FILE_COUNT!
 ) else if "!STATE!"=="PREPARING" (
     call :draw_progress !PERCENT!
@@ -55,7 +51,20 @@ echo [1] Preparing    [2] Mounting    [3] Waiting    [4] Installing
 echo [5] Verifying    [6] Complete    [7] Failed      [R] Random
 echo [Q] Quit
 echo.
-choice /c 1234567RXQ /n /m "Choose status:" /d X /t 2
+goto animate
+
+:loop
+:animate
+set /a SPINNER_PHASE=!SPINNER_PHASE! %% 4 + 1
+if "!SPINNER_PHASE!"=="1" set "SPINNER=/"
+if "!SPINNER_PHASE!"=="2" set "SPINNER=-"
+if "!SPINNER_PHASE!"=="3" set "SPINNER=\"
+if "!SPINNER_PHASE!"=="4" set "SPINNER=|"
+if "!STATE!"=="INSTALLING" (
+    <nul set /p "=!ESC![8;1H!ESC![2K!SPINNER!!ESC![14;1H"
+)
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Start-Sleep -Milliseconds 500"
+choice /c 1234567RXQ /n /d X /t 0 >nul
 set "KEY=!errorlevel!"
 
 rem choice maps digit keys to positions in /C order.
@@ -68,8 +77,8 @@ if "!KEY!"=="6" call :set_status COMPLETE 100 8042
 if "!KEY!"=="7" call :set_status FAILED 62 4125
 if "!KEY!"=="8" call :set_random_status
 if "!KEY!"=="10" goto quit
-set /a DOT_PHASE=!DOT_PHASE! %% 3 + 1
-goto loop
+if not "!KEY!"=="9" goto draw_screen
+goto animate
 
 :set_status
 set "STATE=%~1"
