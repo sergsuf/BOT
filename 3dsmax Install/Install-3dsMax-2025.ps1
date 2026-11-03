@@ -99,6 +99,13 @@ try {
     Write-Log "Launching $setup -q"
     Write-Status 20 'Waiting for Autodesk Setup to start...'
 
+    $maxInstallerLog = Join-Path ([System.IO.Path]::GetTempPath()) '3dsMax_2025_install.log'
+    $maxInstallerLogBaseline = if (Test-Path -LiteralPath $maxInstallerLog -PathType Leaf) {
+        (Get-Item -LiteralPath $maxInstallerLog).LastWriteTimeUtc
+    } else {
+        $null
+    }
+
     $setupProcess = Start-Process -FilePath $setup `
         -ArgumentList '-q' `
         -WorkingDirectory ([System.IO.Path]::GetDirectoryName($setup)) `
@@ -109,11 +116,13 @@ try {
     $stableExecutableSince = $null
 
     while ((Get-Date) -lt $deadline) {
-        $maxInstallerLog = Join-Path ([System.IO.Path]::GetTempPath()) '3dsMax_2025_install.log'
         if (Test-Path -LiteralPath $maxInstallerLog -PathType Leaf) {
-            $maxInstallerResult = Get-Content -LiteralPath $maxInstallerLog -Tail 500 -ErrorAction SilentlyContinue
-            if ($maxInstallerResult -match 'Installation success or error status: 1602') {
-                throw "Autodesk 3ds Max installation was cancelled or rolled back (Windows Installer status 1602). Review $maxInstallerLog."
+            $maxInstallerLastWriteTime = (Get-Item -LiteralPath $maxInstallerLog).LastWriteTimeUtc
+            if ($null -eq $maxInstallerLogBaseline -or $maxInstallerLastWriteTime -gt $maxInstallerLogBaseline) {
+                $maxInstallerResult = Get-Content -LiteralPath $maxInstallerLog -Tail 500 -ErrorAction SilentlyContinue
+                if ($maxInstallerResult -match 'Installation success or error status: 1602') {
+                    throw "Autodesk 3ds Max installation was cancelled or rolled back (Windows Installer status 1602). Review $maxInstallerLog."
+                }
             }
         }
 
