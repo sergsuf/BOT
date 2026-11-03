@@ -4,12 +4,30 @@
 param(
     [string]$IsoPath = 'C:\Install\Autodesk.3ds.Max.2025.3.Multilingual.iso',
     [string]$LogPath = 'C:\Install\3dsMax-2025-install.log',
+    [string]$StatusPath = 'C:\Install\3dsMax-2025-status.txt',
+    [int]$EstimatedInstalledFiles = 8000,
+    [int]$InstallerTimeoutSeconds = 300,
     [switch]$KeepIsoMounted
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $mountedByScript = $false
+
+function Write-Status {
+    param(
+        [ValidateRange(0, 100)][int]$Percent,
+        [string]$Message
+    )
+
+    $statusDirectory = Split-Path -Parent $StatusPath
+    if ($statusDirectory -and -not (Test-Path -LiteralPath $statusDirectory)) {
+        New-Item -ItemType Directory -Path $statusDirectory -Force | Out-Null
+    }
+    Set-Content -LiteralPath $StatusPath -Value "$Percent%|$Message" -Encoding UTF8
+    Write-Progress -Activity 'Installing Autodesk 3ds Max 2025' -Status $Message -PercentComplete $Percent
+    Write-Host ("`r[{0,-20}] {1,3}%  {2}" -f ('#' * [int]($Percent / 5)).PadRight(20, '-'), $Percent, $Message)
+}
 
 function Write-Log {
     param([string]$Message, [string]$Level = 'INFO')
@@ -37,6 +55,7 @@ try {
     $maxExecutable = 'C:\Program Files\Autodesk\3ds Max 2025\3dsmax.exe'
     if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
         Write-Log 'Autodesk 3ds Max 2025 is already installed successfully.'
+        Write-Status 100 'Autodesk 3ds Max 2025 is already installed.'
         exit 0
     }
 
@@ -78,20 +97,49 @@ try {
 
     Write-Log "Mounted ISO at $mediaRoot"
     Write-Log "Launching $setup -q"
+    Write-Status 20 'Waiting for Autodesk Setup to start...'
 
-    $process = Start-Process -FilePath $setup `
+    $setupProcess = Start-Process -FilePath $setup `
         -ArgumentList '-q' `
         -WorkingDirectory ([System.IO.Path]::GetDirectoryName($setup)) `
-        -PassThru `
-        -Wait
+        -PassThru
 
-    if (-not (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
-        throw "Installer exited with code $($process.ExitCode), and 3dsmax.exe was not found. Review $LogPath."
+    $deadline = (Get-Date).AddSeconds($InstallerTimeoutSeconds)
+    $installRoot = Split-Path -Path $maxExecutable -Parent
+
+    while ((Get-Date) -lt $deadline) {
+        if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
+            Write-Status 100 'Installation completed successfully.'
+            Write-Log 'Installation completed successfully.'
+            exit 0
+        }
+
+        $installedFileCount = 0
+        if (Test-Path -LiteralPath $installRoot -PathType Container) {
+            $installedFileCount = (Get-ChildItem -LiteralPath $installRoot -File -Recurse -ErrorAction SilentlyContinue | Measure-Object).Count
+        }
+
+        $calculatedPercent = [Math]::Min(95, [Math]::Max(20, 20 + [int](75 * $installedFileCount / $EstimatedInstalledFiles)))
+        Write-Status $calculatedPercent "Installing Autodesk 3ds Max 2025... ($installedFileCount files)"
+
+        if ($setupProcess.HasExited) {
+            Start-Sleep -Seconds 10
+            if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
+                Write-Status 100 'Installation completed successfully.'
+                Write-Log 'Installation completed successfully.'
+                exit 0
+            }
+        }
+
+        Start-Sleep -Seconds 10
     }
 
-    Write-Log 'Installation completed successfully.'
+    if (-not (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
+        throw "Installation timed out after $InstallerTimeoutSeconds seconds. 3dsmax.exe was not found. Review $LogPath."
+    }
 }
 catch {
+    Write-Status 0 $_.Exception.Message
     Write-Log $_.Exception.Message 'ERROR'
     if ($_.InvocationInfo -and $_.InvocationInfo.Line) {
         Write-Log "Command: $($_.InvocationInfo.Line.Trim())" 'ERROR'

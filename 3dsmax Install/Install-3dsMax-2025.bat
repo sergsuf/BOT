@@ -3,6 +3,7 @@ setlocal
 
 set "SCRIPT=%~dp0Install-3dsMax-2025.ps1"
 set "MAXEXE=C:\Program Files\Autodesk\3ds Max 2025\3dsmax.exe"
+set "STATUS=C:\Install\3dsMax-2025-status.txt"
 
 if exist "%MAXEXE%" (
     echo 3ds Max 2025 is already installed successfully.
@@ -10,6 +11,9 @@ if exist "%MAXEXE%" (
     pause
     exit /b 0
 )
+
+if not exist C:\Install mkdir C:\Install >nul
+> "%STATUS%" echo 0^|Preparing Autodesk 3ds Max 2025...
 
 net session >nul 2>&1
 if errorlevel 1 (
