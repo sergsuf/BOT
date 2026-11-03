@@ -10,27 +10,28 @@ set "STATUS_COMPLETE=Installation completed successfully."
 set "STATUS_FAILED=Installation failed. Check the install log."
 
 set "PERCENT=0"
-set "TITLE=Installing Autodesk 3ds Max 2025..."
+set "TITLE=Installing Autodesk 3ds Max 2025"
 set "FILE_COUNT=0"
 set "STATE=INSTALLING"
-set "BLINK_ON=1"
+set "DOT_PHASE=1"
 
 :loop
-set "DOTS="
-if "!BLINK_ON!"=="1" set "DOTS=..."
-set /a DOTS_WIDTH=0
-if "!BLINK_ON!"=="1" set "DOTS_WIDTH=1"
-if "!BLINK_ON!"=="1" (set "DOTS_MARK=*" ) else (set "DOTS_MARK= ")
-
+if "!DOT_PHASE!"=="1" set "DOTS=."
+if "!DOT_PHASE!"=="2" set "DOTS=.."
+if "!DOT_PHASE!"=="3" set "DOTS=..."
 cls
 echo.
 echo Autodesk 3ds Max 2025 - Status Preview
 echo ======================================
-echo !TITLE!
+if "!STATE!"=="INSTALLING" (
+    echo !TITLE!!DOTS!
+) else (
+    echo !TITLE!
+)
 echo.
 if "!STATE!"=="INSTALLING" (
     call :draw_progress !PERCENT!
-    echo Status: Installing !DOTS_MARK!                         Files: !FILE_COUNT!
+    echo Status: Installing!DOTS!                         Files: !FILE_COUNT!
 ) else if "!STATE!"=="PREPARING" (
     call :draw_progress !PERCENT!
     echo Status: !STATUS_PREPARING!
@@ -55,7 +56,7 @@ echo [1] Preparing    [2] Mounting    [3] Waiting    [4] Installing
 echo [5] Verifying    [6] Complete    [7] Failed      [R] Random
 echo [Q] Quit
 echo.
-choice /c 1234567RXQ /n /m "Choose status:" /d X /t 10
+choice /c 1234567RXQ /n /m "Choose status:" /d X /t 2
 set "KEY=!errorlevel!"
 
 rem choice maps digit keys to positions in /C order.
@@ -68,7 +69,7 @@ if "!KEY!"=="6" call :set_status COMPLETE 100 8042
 if "!KEY!"=="7" call :set_status FAILED 62 4125
 if "!KEY!"=="8" call :set_random_status
 if "!KEY!"=="10" goto quit
-if "!BLINK_ON!"=="1" (set "BLINK_ON=0") else (set "BLINK_ON=1")
+set /a DOT_PHASE=!DOT_PHASE! %% 3 + 1
 goto loop
 
 :set_status

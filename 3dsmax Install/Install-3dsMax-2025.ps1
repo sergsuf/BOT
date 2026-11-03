@@ -7,7 +7,7 @@ param(
     [string]$StatusPath = 'C:\Install\3dsMax-2025-status.txt',
     [int]$EstimatedInstalledFiles = 8000,
     [int]$InstallerTimeoutSeconds = 300,
-    [int]$StatusRefreshSeconds = 10,
+    [int]$StatusRefreshSeconds = 2,
     [switch]$KeepIsoMounted
 )
 
@@ -15,7 +15,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $mountedByScript = $false
 $script:StatusDisplayTop = $null
-$script:StatusBlinkOn = $true
+$script:StatusDotPhase = 0
 
 function Write-Status {
     param(
@@ -39,17 +39,21 @@ function Write-Status {
     $filled = [int][Math]::Floor($width * $Percent / 100)
     $bar = ('#' * $filled) + ('-' * ($width - $filled))
     if ($Message -match '^(Installing Autodesk 3ds Max 2025\.\.\.)\s*\((\d+) files\)$') {
-        $title = 'Installing Autodesk 3ds Max 2025...'
-        $blink = if ($script:StatusBlinkOn) { '*' } else { ' ' }
-        $status = ("[{0}] {1,3}%  Status: Installing {2}  Files: {3}" -f $bar, $Percent, $blink, $Matches[2])
+        $dotCount = ($script:StatusDotPhase % 3) + 1
+        $dots = '.' * $dotCount
+        $title = "Installing Autodesk 3ds Max 2025$dots"
+        $status = ("[{0}] {1,3}%  Status: Installing$dots  Files: {2}" -f $bar, $Percent, $Matches[2])
     }
     elseif ($Message -match '^Installing Autodesk 3ds Max 2025\.\.\.$') {
-        $title = 'Installing Autodesk 3ds Max 2025...'
-        $blink = if ($script:StatusBlinkOn) { '*' } else { ' ' }
-        $status = ("[{0}] {1,3}%  Status: Installing {2}" -f $bar, $Percent, $blink)
+        $dotCount = ($script:StatusDotPhase % 3) + 1
+        $dots = '.' * $dotCount
+        $title = "Installing Autodesk 3ds Max 2025$dots"
+        $status = ("[{0}] {1,3}%  Status: Installing$dots" -f $bar, $Percent)
     }
     else {
-        $title = 'Installing Autodesk 3ds Max 2025...'
+        $dotCount = ($script:StatusDotPhase % 3) + 1
+        $dots = '.' * $dotCount
+        $title = "Installing Autodesk 3ds Max 2025$dots"
         $status = ("[{0}] {1,3}%  Status: {2}" -f $bar, $Percent, $Message)
     }
 
@@ -63,7 +67,9 @@ function Write-Status {
     } catch {
         [Console]::Write("`r$title`n$status")
     }
-    $script:StatusBlinkOn = -not $script:StatusBlinkOn
+    if ($Message -match '^Installing Autodesk 3ds Max 2025') {
+        $script:StatusDotPhase = ($script:StatusDotPhase + 1) % 3
+    }
 }
 
 function Write-Log {
@@ -167,7 +173,6 @@ try {
 
     $deadline = (Get-Date).AddSeconds($InstallerTimeoutSeconds)
     $installRoot = Split-Path -Path $maxExecutable -Parent
-    $stableExecutableSince = $null
     $monitorRoots = @(
         $installRoot,
         (Join-Path ([System.IO.Path]::GetTempPath()) 'odis_download_dest'),
@@ -191,22 +196,12 @@ try {
         }
 
         if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
-            if ($null -eq $stableExecutableSince) {
-                $stableExecutableSince = Get-Date
+            if ($null -ne $folderSnapshotJob) {
+                Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
             }
-
-            if (((Get-Date) - $stableExecutableSince).TotalSeconds -ge 30) {
-                if ($null -ne $folderSnapshotJob) {
-                    Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
-                }
-                Write-Status 100 'Installation completed successfully.'
-                Write-Log 'Installation completed successfully.'
-                exit 0
-            }
-
-            Write-Status 95 'Verifying the completed installation...'
-        } else {
-            $stableExecutableSince = $null
+            Write-Status 100 'Installation completed successfully.'
+            Write-Log 'Installation completed successfully.'
+            exit 0
         }
 
         if ($null -ne $folderSnapshotJob -and $folderSnapshotJob.State -eq 'Completed') {
@@ -249,22 +244,16 @@ try {
         if ($setupProcess.HasExited) {
             Start-Sleep -Seconds ([Math]::Max(1, $StatusRefreshSeconds))
             if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
-                $verificationDeadline = (Get-Date).AddSeconds(30)
-                while ((Get-Date) -lt $verificationDeadline -and (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
-                    Start-Sleep -Seconds 5
+                if ($null -ne $folderSnapshotJob) {
+                    Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
                 }
-                if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
-                    if ($null -ne $folderSnapshotJob) {
-                        Remove-Job -Job $folderSnapshotJob -Force -ErrorAction SilentlyContinue
-                    }
-                    Write-Status 100 'Installation completed successfully.'
-                    Write-Log 'Installation completed successfully.'
-                    exit 0
-                }
+                Write-Status 100 'Installation completed successfully.'
+                Write-Log 'Installation completed successfully.'
+                exit 0
             }
         }
 
-        Start-Sleep -Seconds 10
+        Start-Sleep -Seconds ([Math]::Max(1, $StatusRefreshSeconds))
     }
 
     if (-not (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
