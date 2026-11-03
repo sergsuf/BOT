@@ -106,12 +106,31 @@ try {
 
     $deadline = (Get-Date).AddSeconds($InstallerTimeoutSeconds)
     $installRoot = Split-Path -Path $maxExecutable -Parent
+    $stableExecutableSince = $null
 
     while ((Get-Date) -lt $deadline) {
+        $maxInstallerLog = Join-Path ([System.IO.Path]::GetTempPath()) '3dsMax_2025_install.log'
+        if (Test-Path -LiteralPath $maxInstallerLog -PathType Leaf) {
+            $maxInstallerResult = Get-Content -LiteralPath $maxInstallerLog -Tail 500 -ErrorAction SilentlyContinue
+            if ($maxInstallerResult -match 'Installation success or error status: 1602') {
+                throw "Autodesk 3ds Max installation was cancelled or rolled back (Windows Installer status 1602). Review $maxInstallerLog."
+            }
+        }
+
         if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
-            Write-Status 100 'Installation completed successfully.'
-            Write-Log 'Installation completed successfully.'
-            exit 0
+            if ($null -eq $stableExecutableSince) {
+                $stableExecutableSince = Get-Date
+            }
+
+            if (((Get-Date) - $stableExecutableSince).TotalSeconds -ge 30) {
+                Write-Status 100 'Installation completed successfully.'
+                Write-Log 'Installation completed successfully.'
+                exit 0
+            }
+
+            Write-Status 95 'Verifying the completed installation...'
+        } else {
+            $stableExecutableSince = $null
         }
 
         $installedFileCount = 0
@@ -125,9 +144,15 @@ try {
         if ($setupProcess.HasExited) {
             Start-Sleep -Seconds 10
             if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
-                Write-Status 100 'Installation completed successfully.'
-                Write-Log 'Installation completed successfully.'
-                exit 0
+                $verificationDeadline = (Get-Date).AddSeconds(30)
+                while ((Get-Date) -lt $verificationDeadline -and (Test-Path -LiteralPath $maxExecutable -PathType Leaf)) {
+                    Start-Sleep -Seconds 5
+                }
+                if (Test-Path -LiteralPath $maxExecutable -PathType Leaf) {
+                    Write-Status 100 'Installation completed successfully.'
+                    Write-Log 'Installation completed successfully.'
+                    exit 0
+                }
             }
         }
 
