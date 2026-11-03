@@ -4,7 +4,6 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "STATUS_PREPARING=Preparing Autodesk 3ds Max 2025..."
 set "STATUS_MOUNTING=Mounting installation media..."
 set "STATUS_WAITING=Waiting for Autodesk Setup..."
-set "STATUS_INSTALLING=Installing components..."
 set "STATUS_VERIFYING=Verifying the installation..."
 set "STATUS_COMPLETE=Installation completed successfully."
 set "STATUS_FAILED=Installation failed. Check the install log."
@@ -31,7 +30,7 @@ if "!STATE!"=="INSTALLING" (
 echo.
 if "!STATE!"=="INSTALLING" (
     call :draw_progress !PERCENT!
-    echo Status: Installing!DOTS!                         Files: !FILE_COUNT!
+    echo Files: !FILE_COUNT!
 ) else if "!STATE!"=="PREPARING" (
     call :draw_progress !PERCENT!
     echo Status: !STATUS_PREPARING!

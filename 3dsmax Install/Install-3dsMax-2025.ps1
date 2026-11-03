@@ -39,16 +39,12 @@ function Write-Status {
     $filled = [int][Math]::Floor($width * $Percent / 100)
     $bar = ('#' * $filled) + ('-' * ($width - $filled))
     if ($Message -match '^(Installing Autodesk 3ds Max 2025\.\.\.)\s*\((\d+) files\)$') {
-        $dotCount = ($script:StatusDotPhase % 3) + 1
-        $dots = '.' * $dotCount
-        $title = "Installing Autodesk 3ds Max 2025$dots"
-        $status = ("[{0}] {1,3}%  Status: Installing$dots  Files: {2}" -f $bar, $Percent, $Matches[2])
+        $title = "Installing Autodesk 3ds Max 2025..."
+        $status = ("[{0}] {1,3}%  Files: {2}" -f $bar, $Percent, $Matches[2])
     }
     elseif ($Message -match '^Installing Autodesk 3ds Max 2025\.\.\.$') {
-        $dotCount = ($script:StatusDotPhase % 3) + 1
-        $dots = '.' * $dotCount
-        $title = "Installing Autodesk 3ds Max 2025$dots"
-        $status = ("[{0}] {1,3}%  Status: Installing$dots" -f $bar, $Percent)
+        $title = "Installing Autodesk 3ds Max 2025..."
+        $status = "[{0}] {1,3}% " -f $bar, $Percent
     }
     else {
         $dotCount = ($script:StatusDotPhase % 3) + 1
